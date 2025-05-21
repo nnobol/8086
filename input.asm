@@ -1,8 +1,14 @@
 bits 16
 
-mov cl, 12
-mov ch, -12
-mov cx, 12
-mov cx, -12
-mov dx, 3948
-mov dx, -3948
+mov bp, [-65536]
+mov cx, bx
+mov ch, ah
+mov dx, bx
+mov si, bx
+mov bx, di
+mov al, cl
+mov ch, ch
+mov bx, ax
+mov bx, si
+mov sp, di
+mov bp, ax
