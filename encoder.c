@@ -389,6 +389,7 @@ int isPureNumericExpression(const char *expr, int *value, int *lineno)
             sign = -1;
             expr++;
         }
+        // nothing
 
         if (!isdigit(*expr))
         {
