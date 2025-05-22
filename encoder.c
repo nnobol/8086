@@ -107,6 +107,8 @@ int main(int argc, char *argv[])
         switch (mType)
         {
         case MNEMONIC_MOV:
+            // check for 'byte' or 'word' after space, this means memory operation
+            // we also need to account for size of the register in case of this
             if (token_count != 3)
             {
                 fprintf(stderr, "Error: mov expects 2 operands\n");
@@ -117,7 +119,7 @@ int main(int argc, char *argv[])
             }
 
             Operand op1 = {0}, op2 = {0};
-            if (analyzeOperand(tokens[1], &op1, &lineno) != 0 || analyzeOperand(tokens[2], &op2, &lineno) != 0)
+            if (parseOperand(tokens[1], &op1, &lineno) != 0 || parseOperand(tokens[2], &op2, &lineno) != 0)
             {
                 freeTokens(tokens, token_count);
                 fclose(input);
@@ -207,7 +209,7 @@ void lineToLower(char *line)
     }
 }
 
-int tokenizeLine(char *line, char *tokens[], int *token_count, int *lineno)
+int tokenizeLine(char *line, char *tokens[], uint8_t *token_count, int *lineno)
 {
     *token_count = 0;
 
@@ -274,7 +276,7 @@ MnemonicType getMnemonicType(const char *mnemonic)
     return MNEMONIC_INVALID;
 }
 
-int analyzeOperand(const char *op, Operand *out, int *lineno)
+int parseOperand(const char *op, Operand *out, int *lineno)
 {
     // check if the operand is a register
     for (int i = 0; registers[i].name[0] != '\0'; i++)
@@ -318,7 +320,7 @@ int analyzeOperand(const char *op, Operand *out, int *lineno)
     Immediate *imm = malloc(sizeof(Immediate));
     if (!imm)
     {
-        perror("malloc error in analyzeOperand for immediate");
+        perror("malloc error in parseOperand for immediate");
         return 1;
     }
 
@@ -349,12 +351,12 @@ int analyzeMemOperand(const char *token, Memory *out, int *lineno)
 
     while (*expr != '\0')
     {
-        while (*expr != ' ' || *expr != '\t')
+        while (*expr != ' ' && *expr != '\t')
         {
             expr++;
         }
 
-        if (*expr == '\0')
+        if (*expr == '\0' || *expr == ']')
         {
             fprintf(stderr, "Error: empty memory operand on line %d: '%s'\n", *lineno, token);
             return 1;
