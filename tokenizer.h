@@ -1,7 +1,6 @@
 #ifndef TOKENIZER_H
 #define TOKENIZER_H
 
-#include <stdint.h>  // for uint16_t
 #include <stddef.h>  // for size_t
 #include <stdbool.h> // for bool
 
@@ -28,8 +27,8 @@ typedef enum
 typedef struct
 {
     TokenType type;
-    char *lexeme;    // null-terminated text, caller must free(), allocated in next_token(), not allocated for T_EOF
-    uint16_t line_n; // source line number where this token appeared
+    char *lexeme;  // null-terminated text, caller must free(), allocated in next_token(), not allocated for T_EOF
+    size_t line_n; // source line number where this token appeared
 } Token;
 
 typedef struct
@@ -37,10 +36,10 @@ typedef struct
     const char *line_src; // the original line buffer (e.g. "mov ax, [bx + 10]\n")
     size_t pos;           // current index (0 initially)
     size_t line_len;      // length of the line (via strlen)
-    uint16_t line_n;      // the line number (for errors)
+    size_t line_n;        // the line number (for errors)
 } Tokenizer;
 
-int tokenize_line(const char *line_src, uint16_t line_n, Token **tokens_out, size_t *token_count_out);
+int tokenize_line(const char *line_src, size_t line_n, Token **tokens_out, size_t *token_count_out);
 static int next_token(Tokenizer *tk, Token *t);
 static inline char peek(Tokenizer *tk);
 static inline void advance(Tokenizer *tk);

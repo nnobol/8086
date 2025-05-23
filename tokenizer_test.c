@@ -5,7 +5,7 @@
 
 #include "tokenizer.h"
 
-void expect_token(const Token *t, TokenType expected_type, const char *expected_lexeme, uint16_t expected_line)
+void expect_token(const Token *t, TokenType expected_type, const char *expected_lexeme, size_t expected_line)
 {
     assert(t->type == expected_type);
     assert(strcmp(t->lexeme, expected_lexeme) == 0);
@@ -38,8 +38,9 @@ void test_mov_memory()
     size_t token_count = 0;
     int result = tokenize_line(line, 42, &tokens, &token_count);
     assert(result == 0);
-    // expected: mov, word, ',', '[', bp, '+', 123, ']', ';', comment
-    assert(token_count == 10);
+    // expected: mov, word, ',', '[', bp, '+', 123, ']'
+    // comment should be stripped
+    assert(token_count == 8);
     int i = 0;
     expect_token(&tokens[i++], T_MNEMONIC, "mov", 42);
     expect_token(&tokens[i++], T_SIZE, "word", 42);
@@ -49,11 +50,9 @@ void test_mov_memory()
     expect_token(&tokens[i++], T_PLUS, "+", 42);
     expect_token(&tokens[i++], T_NUMBER, "123", 42);
     expect_token(&tokens[i++], T_C_BRACK, "]", 42);
-    expect_token(&tokens[i++], T_COMMENT, ";", 42);
-    expect_token(&tokens[i++], T_BAD, "comment", 42);
 
-    for (size_t i = 0; i < token_count; i++)
-        free(tokens[i].lexeme);
+    for (size_t j = 0; j < token_count; j++)
+        free(tokens[j].lexeme);
     free(tokens);
 }
 

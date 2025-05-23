@@ -1,7 +1,8 @@
-#include "tokenizer.h"
 #include <ctype.h>  // for isspace, isdigit, isalpha, tolower
 #include <string.h> // for memcpy, strlen, strcmp
 #include <stdlib.h> // for malloc, realloc, free
+
+#include "tokenizer.h"
 
 static const struct
 {
@@ -33,7 +34,7 @@ static const struct
     // end marker
     {NULL, T_BAD}};
 
-int tokenize_line(const char *line_src, uint16_t line_n, Token **tokens_out, size_t *token_count_out)
+int tokenize_line(const char *line_src, size_t line_n, Token **tokens_out, size_t *token_count_out)
 {
     Tokenizer tk = {
         .line_src = line_src,
@@ -57,20 +58,25 @@ int tokenize_line(const char *line_src, uint16_t line_n, Token **tokens_out, siz
             return 1;
         }
 
-        if (t.type == T_EOF)
+        if (t.type == T_COMMENT || t.type == T_EOF)
         {
             break;
         }
 
         if (t_count == capacity)
         {
-            capacity = capacity ? capacity * 2 : 4;
-            arr = realloc(arr, capacity * sizeof *arr);
-            if (!arr)
+            size_t newcap = capacity ? capacity * 2 : 4;
+            Token *tmp = realloc(arr, newcap * sizeof *arr);
+            if (!tmp)
             {
                 free(t.lexeme);
+                for (size_t i = 0; i < t_count; i++)
+                    free(arr[i].lexeme);
+                free(arr);
                 return 1;
             }
+            arr = tmp;
+            capacity = newcap;
         }
 
         arr[t_count++] = t;
@@ -174,7 +180,7 @@ static int next_token(Tokenizer *tk, Token *t_out)
             // 3) transform each char to lowercase, then classify
             for (size_t i = 0; i < len; i++)
             {
-                buf[i] = tolower(buf[i]);
+                buf[i] = (char)tolower((unsigned char)buf[i]);
             }
             t_out->lexeme = buf;
             t_out->type = classify_identifier(buf);
