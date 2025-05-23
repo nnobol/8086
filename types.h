@@ -54,9 +54,9 @@ typedef struct
 } AddressEncoding;
 
 void lineToLower(char *line);
-int tokenizeLine(char *line, char *tokens[], int *token_count, int *lineno);
+int tokenizeLine(char *line, char *tokens[], uint8_t *token_count, int *lineno);
 MnemonicType getMnemonicType(const char *mnemonic);
-int analyzeOperand(const char *token, Operand *out, int *lineno);
+int parseOperand(const char *token, Operand *out, int *lineno);
 int analyzeMemOperand(const char *token, Memory *out, int *lineno);
 int isPureNumericExpression(const char *expr, int *value, int *lineno);
 int validateOpCombination(const Operand *op1, const Operand *op2);
