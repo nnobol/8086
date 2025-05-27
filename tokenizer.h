@@ -2,7 +2,6 @@
 #define TOKENIZER_H
 
 #include <stddef.h>  // for size_t
-#include <stdbool.h> // for bool
 
 #define LINE_N_MAX 65535
 #define LINE_LEN_MAX 65535
@@ -40,10 +39,5 @@ typedef struct
 } Tokenizer;
 
 int tokenize_line(const char *line_src, size_t line_n, Token **tokens_out, size_t *token_count_out);
-static int next_token(Tokenizer *tk, Token *t);
-static inline char peek(Tokenizer *tk);
-static inline void advance(Tokenizer *tk);
-static inline bool is_at_end(Tokenizer *tk);
-static inline TokenType classify_identifier(const char *s);
 
 #endif

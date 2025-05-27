@@ -1,8 +1,15 @@
 #include <ctype.h>  // for isspace, isdigit, isalpha, tolower
 #include <string.h> // for memcpy, strlen, strcmp
 #include <stdlib.h> // for malloc, realloc, free
+#include <stdbool.h> // for bool
 
 #include "tokenizer.h"
+
+static int next_token(Tokenizer *tk, Token *t);
+static inline char peek(Tokenizer *tk);
+static inline void advance(Tokenizer *tk);
+static inline bool is_at_end(Tokenizer *tk);
+static inline TokenType classify_identifier(const char *s);
 
 static const struct
 {
@@ -60,6 +67,7 @@ int tokenize_line(const char *line_src, size_t line_n, Token **tokens_out, size_
 
         if (t.type == T_COMMENT || t.type == T_EOF)
         {
+            free(t.lexeme);
             break;
         }
 
