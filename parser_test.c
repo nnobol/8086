@@ -3,18 +3,37 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <io.h> // For _dup, _dup2, _fileno
+#define dup _dup
+#define dup2 _dup2
+#define fileno _fileno
+#endif
+
 #include "tokenizer.h"
 #include "parser.h"
 
-static FILE *stderr_save;
 static FILE *stderr_tmp;
+
+#ifdef _WIN32
+static int stderr_fd_backup;
+#else
+static FILE *stderr_save;
+#endif
 
 static void begin_capture_stderr(void)
 {
-    stderr_save = stderr;
+#ifdef _WIN32
+    errno_t err = tmpfile_s(&stderr_tmp);
+    assert(err == 0 && stderr_tmp != NULL);
+    stderr_fd_backup = dup(fileno(stderr));
+    dup2(fileno(stderr_tmp), fileno(stderr));
+#else
     stderr_tmp = tmpfile();
     assert(stderr_tmp != NULL);
+    stderr_save = stderr;
     stderr = stderr_tmp;
+#endif
 }
 
 static char *end_capture_stderr(void)
@@ -23,7 +42,14 @@ static char *end_capture_stderr(void)
     char buf[1024];
     size_t n = fread(buf, 1, sizeof(buf) - 1, stderr_tmp);
     buf[n] = '\0';
+
+#ifdef _WIN32
+    dup2(stderr_fd_backup, fileno(stderr));
+    _close(stderr_fd_backup);
+#else
     stderr = stderr_save;
+#endif
+
     fclose(stderr_tmp);
 
     char *out = malloc(n + 1);
@@ -46,6 +72,7 @@ static void expect_parse_error(const char *line, const char *want_msg)
     Instruction dummy;
     int pr = parse_tokens(tokens, n, lineno, &dummy);
     char *out = end_capture_stderr();
+    printf("%s", out);
 
     // 3) assert return != 0 and message contains want_msg
     assert(pr != 0);
@@ -72,6 +99,7 @@ static void test_bad_brackets(void)
     expect_parse_error("mov ax, [[100]]", "Error on line 10: nested '[' is not allowed");
     expect_parse_error("mov ax, [[100]", "Error on line 10: nested '[' is not allowed");
     expect_parse_error("mov ax, []", "Error on line 10: empty memory operand");
+    expect_parse_error("mov [122], [143]", "Error on line 10: expected exactly one memory operand");
 }
 
 static void test_bad_commas(void)

@@ -9,6 +9,7 @@
 
 typedef enum
 {
+    T_INVALID,
     T_EOF,
     T_BAD,
     T_MNEMONIC, // mov (and later add, jmp…)
