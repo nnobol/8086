@@ -4,7 +4,7 @@
 #include <string.h>
 
 #ifdef _WIN32
-#include <io.h> // For _dup, _dup2, _fileno
+#include <io.h> // for _dup, _dup2, _fileno
 #define dup _dup
 #define dup2 _dup2
 #define fileno _fileno
@@ -82,85 +82,107 @@ static void expect_parse_error(const char *line, const char *want_msg)
     free(out);
 }
 
-static void test_bad_token(void)
+static void test_bad_tokens(void)
 {
-    expect_parse_error("mov ax, bad", "Error: invalid token on line 10: 'bad'");
+    expect_parse_error("mov ax, bad", "Error on line 10: invalid token 'bad'");
+    expect_parse_error("bad", "Error on line 10: invalid token 'bad'");
+    expect_parse_error("mov bad bad2 bad3", "Error on line 10: invalid token 'bad'");
 }
 
-static void test_bad_mnemonic_position(void)
+static void test_invalid_instruction_structure(void)
 {
-    expect_parse_error("ax mov, bx", "Error: invalid first token on line 10: expected a mnemonic, got 'ax'");
+    expect_parse_error("ax mov, bx", "Error on line 10: first token should be a valid mnemonic");
+    expect_parse_error("ax, bx", "Error on line 10: first token should be a valid mnemonic");
+    expect_parse_error("mov mov", "Error on line 10: expected exactly one mnemonic");
 }
 
-static void test_bad_brackets(void)
+static void test_operand_count_and_positioning(void)
+{
+    expect_parse_error("mov ax bx", "Error on line 10: operands must be separated by a ','");
+    expect_parse_error("mov ax 5", "Error on line 10: operands must be separated by a ','");
+    expect_parse_error("mov ax [100]", "Error on line 10: operands must be separated by a ','");
+    expect_parse_error("mov [100] 5", "Error on line 10: operands must be separated by a ','");
+    expect_parse_error("mov [100] ax", "Error on line 10: operands must be separated by a ','");
+    expect_parse_error("mov [100] [100]", "Error on line 10: operands must be separated by a ','");
+    expect_parse_error("mov 5 5", "Error on line 10: operands must be separated by a ','");
+    expect_parse_error("mov ax bx cx", "Error on line 10: too many operands (maximum 2 allowed)");
+    expect_parse_error("mov [100] [100] [100]", "Error on line 10: too many operands (maximum 2 allowed)");
+    expect_parse_error("mov 5 5 5", "Error on line 10: too many operands (maximum 2 allowed)");
+    expect_parse_error("mov ax 5 [100]", "Error on line 10: too many operands (maximum 2 allowed)");
+    expect_parse_error("mov [100], [100]", "Error on line 10: expected exactly one memory operand");
+    expect_parse_error("mov 5, 5", "Error on line 10: expected exactly one immediate operand");
+    expect_parse_error("mov 5, ax", "Error on line 10: immediate must be the second operand");
+}
+
+static void test_memory_operand_syntax(void)
 {
     expect_parse_error("mov ax, ]", "Error on line 10: closing ']' without an opening '['");
     expect_parse_error("mov ax, [", "Error on line 10: opening '[' without a matching ']'");
     expect_parse_error("mov ax, [[100]]", "Error on line 10: nested '[' is not allowed");
     expect_parse_error("mov ax, [[100]", "Error on line 10: nested '[' is not allowed");
     expect_parse_error("mov ax, []", "Error on line 10: empty memory operand");
-    expect_parse_error("mov [122], [143]", "Error on line 10: expected exactly one memory operand");
+    expect_parse_error("mov ax, [bp bx cx]", "Error on line 10: too many registers in the memory operand");
+    expect_parse_error("mov ax, [ax bx]", "Error on line 10: expected '[reg+reg...]' pattern in memory operand");
+    expect_parse_error("mov ax, [ax+bx 20] ", "Error on line 10: invalid token after '[reg+reg' in memory operand");
+    expect_parse_error("mov ax, [20+bx] ", "Error on line 10: expected register immediately after '[' in memory operand");
+    expect_parse_error("mov ax, [+bx]", "Error on line 10: expected register immediately after '[' in memory operand");
+    expect_parse_error("mov ax, [bx 20] ", "Error on line 10: invalid token after '[reg' in memory operand");
+    expect_parse_error("mov ax, [-bx]", "Error on line 10: '-' symbol inside the memory operand must be followed by a number");
+    expect_parse_error("mov ax, [bx-cx]", "Error on line 10: '-' symbol inside the memory operand must be followed by a number");
+    expect_parse_error("mov ax, [5+10-20-]", "Error on line 10: '-' symbol inside the memory operand must be followed by a number");
+    expect_parse_error("mov ax, [bx+]", "Error on line 10: '+' symbol inside the memory operand must be followed by a number or a register");
+    expect_parse_error("mov ax, [5+10-20+]", "Error on line 10: '+' symbol inside the memory operand must be followed by a number or a register");
+    expect_parse_error("mov ax, [5+10-20 20]", "Error on line 10: number inside memory operand must be followed by '+' or '-' or closing ']'");
+    expect_parse_error("mov ax, [5+10-20 bx]", "Error on line 10: number inside memory operand must be followed by '+' or '-' or closing ']'");
+    expect_parse_error("mov ax, [5+10-20 byte]", "Error on line 10: number inside memory operand must be followed by '+' or '-' or closing ']'");
+    expect_parse_error("mov ax, [5+10-20 word]", "Error on line 10: number inside memory operand must be followed by '+' or '-' or closing ']'");
+    expect_parse_error("mov ax, [word bp]", "Error on line 10: size specifier not allowed inside the memory operand");
+    expect_parse_error("mov ax, [byte 5]", "Error on line 10: size specifier not allowed inside the memory operand");
 }
 
 static void test_bad_commas(void)
 {
-    expect_parse_error("mov ax 5,", "Error on line 10: ',' not allowed at that position");
-    expect_parse_error("mov, ax 5", "Error on line 10: ',' not allowed at that position");
+    expect_parse_error("mov ax,", "Error on line 10: unexpected end of input after ','");
+    expect_parse_error("mov ax 5,", "Error on line 10: unexpected end of input after ','");
+    expect_parse_error("mov, ax 5", "Error on line 10: ',' must be between two operands");
     expect_parse_error("mov ax,, 5", "Error on line 10: expected exactly one ','");
+    expect_parse_error("mov ax, 5, 10", "Error on line 10: expected exactly one ','");
+    expect_parse_error("mov [,] 5", "Error on line 10: ',' not allowed inside the memory operand");
+    expect_parse_error("mov [ax,] 5", "Error on line 10: ',' not allowed inside the memory operand");
 }
 
 static void test_bad_size_specifiers(void)
 {
-    expect_parse_error("mov ax, 5 byte", "Error on line 10: size specifier 'byte' not allowed as the last token");
-    expect_parse_error("mov ax, 5 word", "Error on line 10: size specifier 'word' not allowed as the last token");
-    expect_parse_error("mov byte, ax 5", "Error on line 10: cannot write a size specifier before a ','");
-    expect_parse_error("mov word ax byte, 5", "Error on line 10: cannot write a size specifier before a ','");
-    expect_parse_error("mov word ax word word 600", "Error on line 10: more than 2 size specifiers found in the line");
-    expect_parse_error("mov word ax byte 100", "Error on line 10: size specifiers of different sizes is not allowed");
-}
-
-static void test_bad_numbers(void)
-{
-    expect_parse_error("mov ax, 5 10", "Error on line 10: two numbers not allowed");
-    expect_parse_error("mov 5, ax", "Error on line 10: number not allowed at that position");
-    expect_parse_error("mov ax, 5 bx", "Error on line 10: number not allowed at that position");
-    expect_parse_error("mov ax, [5+10-20 20]", "Error on line 10: the number of sign symbols and numbers don't match");
+    expect_parse_error("mov ax, 5 byte", "Error on line 10: unexpected end of input after 'byte'");
+    expect_parse_error("mov ax, 5 word", "Error on line 10: unexpected end of input after 'word'");
+    expect_parse_error("mov byte, ax 5", "Error on line 10: size specifier must be followed by an immediate or a register");
+    expect_parse_error("mov word ax byte, 5", "Error on line 10: size specifier must be followed by an immediate or a register");
+    expect_parse_error("mov word ax byte [100]", "Error on line 10: size specifier must be followed by an immediate or a register");
+    expect_parse_error("mov word ax word word bx", "Error on line 10: size specifier must be followed by an immediate or a register");
 }
 
 static void test_bad_sign_symbols(void)
 {
-    expect_parse_error("mov -ax, 10", "Error on line 10: sign symbols not allowed at that position");
-    expect_parse_error("mov +ax, 10", "Error on line 10: sign symbols not allowed at that position");
-    expect_parse_error("mov ax, +bx", "Error on line 10: sign symbols outside of the memory operand must be followed by a number");
-    expect_parse_error("mov ax, -bx", "Error on line 10: sign symbols outside of the memory operand must be followed by a number");
-    expect_parse_error("mov ax, [-bx]", "Error on line 10: the minus sign symbol inside of the memory operand must be followed by a number");
-    expect_parse_error("mov ax, [+bx]", "Error on line 10: the plus sign symbol inside of the memory operand not allowed for the first regiser");
-    expect_parse_error("mov ax, [bx+]", "Error on line 10: the plus sign symbol inside of the memory operand must be followed by a register or a number");
-}
-
-static void test_bad_registers(void)
-{
-    expect_parse_error("mov ax, bx cx", "Error on line 10: too many registers on the line");
-    expect_parse_error("mov ax, [bp bx cx]", "Error on line 10: too many registers on the line");
-    expect_parse_error("mov ax bx", "Error on line 10: the first register operand must be followed by a ','");
-    expect_parse_error("mov ax, bx [cx]", "Error on line 10: too many registers on the line");
-    expect_parse_error("mov ax, bx 5", "Error on line 10: the second register operand must the last token");
-    expect_parse_error("mov ax, bx [5]", "Error on line 10: the second register operand must the last token");
-    expect_parse_error("mov [ax bx cx], 5", "Error on line 10: too many registers on the line");
-    expect_parse_error("mov ax, [ax bx]", "Error on line 10: the first register inside the memory operand must be followed by a '+'");
+    expect_parse_error("mov -ax, 10", "Error on line 10: sign symbols outside the memory operand must be followed by a number");
+    expect_parse_error("mov +ax, 10", "Error on line 10: sign symbols outside the memory operand must be followed by a number");
+    expect_parse_error("mov ax, +bx", "Error on line 10: sign symbols outside the memory operand must be followed by a number");
+    expect_parse_error("mov ax, -bx", "Error on line 10: sign symbols outside the memory operand must be followed by a number");
+    expect_parse_error("mov ax, +[100]", "Error on line 10: sign symbols outside the memory operand must be followed by a number");
+    expect_parse_error("mov ax, -[100]", "Error on line 10: sign symbols outside the memory operand must be followed by a number");
+    expect_parse_error("mov ax, --100", "Error on line 10: sign symbols outside the memory operand must be followed by a number");
+    expect_parse_error("mov ax, ++100", "Error on line 10: sign symbols outside the memory operand must be followed by a number");
 }
 
 int main(void)
 {
     printf("Running parser negative tests...\n");
-    test_bad_token();
-    test_bad_mnemonic_position();
-    test_bad_brackets();
+    test_bad_tokens();
+    test_invalid_instruction_structure();
+    test_operand_count_and_positioning();
+    test_memory_operand_syntax();
     test_bad_commas();
     test_bad_size_specifiers();
-    test_bad_numbers();
     test_bad_sign_symbols();
-    test_bad_registers();
     printf("All parser tests passed!\n");
     return 0;
 }

@@ -3,19 +3,11 @@
 #include <stdlib.h> // for free
 #include <string.h> // for strcmp
 #include <stdint.h> // for int64_t
+#include <stdbool.h>
 
 #include "parser.h"
 
 static inline int validate_syntax(const Token *tokens, size_t token_count, size_t lineno);
-static inline int validate_syntax_full(const Token *tokens, size_t token_count, size_t lineno);
-static inline int check_bad_tokens(const Token *tokens, size_t token_count, size_t lineno);
-static inline int check_mnemonic(const char *m, TokenType type, size_t lineno);
-static inline int check_brackets(const Token *tokens, size_t token_count, size_t lineno);
-static inline int check_commas(const Token *tokens, size_t token_count, size_t lineno);
-static inline int check_size_specifiers(const Token *tokens, size_t token_count, size_t lineno);
-static inline int check_numbers(const Token *tokens, size_t token_count, size_t lineno);
-static inline int check_sign_symbols(const Token *tokens, size_t token_count, size_t lineno);
-static inline int check_registers(const Token *tokens, size_t token_count, size_t lineno);
 static inline MnemonicType classify_mnemonic(const char *mnemonic);
 
 // int main()
@@ -56,379 +48,236 @@ int parse_tokens(Token *tokens, size_t token_count, size_t lineno, Instruction *
     return 0;
 }
 
+// parser_test.c for details
 static inline int validate_syntax(const Token *tokens, size_t token_count, size_t lineno)
-{
-    if (check_bad_tokens(tokens, token_count, lineno) != 0)
-        return 1;
-    if (check_mnemonic(tokens[0].lexeme, tokens[0].type, lineno) != 0)
-        return 1;
-    if (check_brackets(tokens, token_count, lineno) != 0)
-        return 1;
-    if (check_commas(tokens, token_count, lineno) != 0)
-        return 1;
-    if (check_size_specifiers(tokens, token_count, lineno) != 0)
-        return 1;
-    if (check_numbers(tokens, token_count, lineno) != 0)
-        return 1;
-    if (check_sign_symbols(tokens, token_count, lineno) != 0)
-        return 1;
-    if (check_registers(tokens, token_count, lineno) != 0)
-        return 1;
-
-    return 0;
-}
-
-static inline int check_bad_tokens(const Token *tokens, size_t token_count, size_t lineno)
 {
     for (size_t i = 0; i < token_count; i++)
     {
         if (tokens[i].type == T_BAD)
         {
-            fprintf(stderr, "Error: invalid token on line %zu: '%s'\n", lineno, tokens[i].lexeme);
+            fprintf(stderr, "Error on line %zu: invalid token '%s'\n", lineno, tokens[i].lexeme);
             return 1;
         }
     }
 
-    return 0;
-}
-
-static inline int check_mnemonic(const char *m, TokenType type, size_t lineno)
-{
-    if (type != T_MNEMONIC)
+    if (tokens[0].type != T_MNEMONIC)
     {
-        fprintf(stderr, "Error: invalid first token on line %zu: expected a mnemonic, got '%s'\n", lineno, m);
+        fprintf(stderr, "Error on line %zu: first token should be a valid mnemonic\n", lineno);
         return 1;
     }
 
-    return 0;
-}
-
-static inline int check_brackets(const Token *tokens, size_t token_count, size_t lineno)
-{
-    int depth = 0;
-    size_t mem_ops = 0;
+    int64_t bracket_depth = 0;
+    size_t mem_op_start = 0;
+    size_t mnems = 0, commas = 0, mem_ops = 0, imm_ops = 0, reg_ops = 0, regs_in = 0;
     for (size_t i = 0; i < token_count; i++)
     {
-        if (tokens[i].type == T_C_BRACK)
+        TokenType prev = (i > 0 ? tokens[i - 1].type : T_INVALID);
+        TokenType next = (i + 1 < token_count ? tokens[i + 1].type : T_EOF);
+
+        switch (tokens[i].type)
         {
-            if (depth == 0)
+        case T_MNEMONIC:
+            mnems++;
+            break;
+        case T_COMMA:
+            if (next == T_EOF)
             {
-                fprintf(stderr, "Error on line %zu: closing ']' without an opening '['\n", lineno);
-                return 1;
-            }
-            mem_ops++;
-            depth--;
-        }
-        else if (tokens[i].type == T_O_BRACK)
-        {
-            if (tokens[i + 1].type == T_C_BRACK)
-            {
-                fprintf(stderr, "Error on line %zu: empty memory operand\n", lineno);
+                fprintf(stderr, "Error on line %zu: unexpected end of input after ','\n", lineno);
                 return 1;
             }
 
-            if (depth == 1)
+            if (bracket_depth > 0)
+            {
+                fprintf(stderr, "Error on line %zu: ',' not allowed inside the memory operand\n", lineno);
+                return 1;
+            }
+
+            if (commas == 1)
+            {
+                fprintf(stderr, "Error on line %zu: expected exactly one ','\n", lineno);
+                return 1;
+            }
+
+            if (!(prev == T_REG || prev == T_C_BRACK || prev == T_NUMBER))
+            {
+                fprintf(stderr, "Error on line %zu: ',' must be between two operands\n", lineno);
+                return 1;
+            }
+            commas++;
+            break;
+        case T_O_BRACK:
+            if (bracket_depth == 1)
             {
                 fprintf(stderr, "Error on line %zu: nested '[' is not allowed\n", lineno);
                 return 1;
             }
-            depth++;
+            mem_op_start = i;
+            bracket_depth++;
+            break;
+        case T_C_BRACK:
+            if (bracket_depth == 0)
+            {
+                fprintf(stderr, "Error on line %zu: closing ']' without an opening '['\n", lineno);
+                return 1;
+            }
+            bracket_depth--;
+            mem_ops++;
+            break;
+        case T_SIZE:
+            if (next == T_EOF)
+            {
+                fprintf(stderr, "Error on line %zu: unexpected end of input after '%s'\n", lineno, tokens[i].lexeme);
+                return 1;
+            }
+
+            if (bracket_depth > 0)
+            {
+                fprintf(stderr, "Error on line %zu: size specifier not allowed inside the memory operand\n", lineno);
+                return 1;
+            }
+            if (next != T_NUMBER && next != T_REG)
+            {
+                fprintf(stderr, "Error on line %zu: size specifier must be followed by an immediate or a register\n", lineno);
+                return 1;
+            }
+            break;
+        case T_NUMBER:
+            if (bracket_depth > 0)
+            {
+                if (next != T_C_BRACK && next != T_PLUS && next != T_MINUS)
+                {
+                    fprintf(stderr, "Error on line %zu: number inside memory operand must be followed by '+' or '-' or closing ']'\n", lineno);
+                    return 1;
+                }
+            }
+            else
+            {
+                imm_ops++;
+            }
+            break;
+        case T_PLUS:
+        case T_MINUS:
+            if (bracket_depth > 0)
+            {
+                if (tokens[i].type == T_MINUS && next != T_NUMBER)
+                {
+                    fprintf(stderr, "Error on line %zu: '-' symbol inside the memory operand must be followed by a number\n", lineno);
+                    return 1;
+                }
+                else if (tokens[i].type == T_PLUS && next != T_NUMBER && next != T_REG)
+                {
+                    fprintf(stderr, "Error on line %zu: '+' symbol inside the memory operand must be followed by a number or a register\n", lineno);
+                    return 1;
+                }
+            }
+            else
+            {
+                if (next != T_NUMBER)
+                {
+                    fprintf(stderr, "Error on line %zu: sign symbols outside the memory operand must be followed by a number\n", lineno);
+                    return 1;
+                }
+            }
+            break;
+        case T_REG:
+            if (bracket_depth > 0)
+            {
+                regs_in++;
+            }
+            else
+            {
+                reg_ops++;
+            }
+            break;
+        default:
+            break;
         }
     }
 
-    if (depth == 1)
+    if (mnems > 1)
+    {
+        fprintf(stderr, "Error on line %zu: expected exactly one mnemonic\n", lineno);
+        return 1;
+    }
+
+    if (bracket_depth == 1)
     {
         fprintf(stderr, "Error on line %zu: opening '[' without a matching ']'\n", lineno);
         return 1;
     }
 
-    if (mem_ops > 2)
+    size_t operand_count = mem_ops + reg_ops + imm_ops;
+    if (operand_count > 2)
+    {
+        fprintf(stderr, "Error on line %zu: too many operands (maximum 2 allowed)\n", lineno);
+        return 1;
+    }
+
+    if (operand_count == 2 && commas != 1)
+    {
+        fprintf(stderr, "Error on line %zu: operands must be separated by a ','\n", lineno);
+        return 1;
+    }
+
+    if (mem_ops > 1)
     {
         fprintf(stderr, "Error on line %zu: expected exactly one memory operand\n", lineno);
         return 1;
     }
 
-    return 0;
-}
-
-static inline int check_commas(const Token *tokens, size_t token_count, size_t lineno)
-{
-    if (tokens[token_count - 1].type == T_COMMA || tokens[1].type == T_COMMA)
+    if (mem_ops == 1 && tokens[mem_op_start + 1].type == T_C_BRACK)
     {
-        fprintf(stderr, "Error on line %zu: ',' not allowed at that position\n", lineno);
+        fprintf(stderr, "Error on line %zu: empty memory operand\n", lineno);
         return 1;
     }
 
-    int commas = 0;
-    for (size_t i = 0; i < token_count; i++)
-        if (tokens[i].type == T_COMMA)
-            commas++;
-
-    if (commas > 1)
+    if (imm_ops > 1)
     {
-        fprintf(stderr, "Error on line %zu: expected exactly one ','\n", lineno);
+        fprintf(stderr, "Error on line %zu: expected exactly one immediate operand\n", lineno);
         return 1;
     }
 
-    return 0;
-}
-
-static inline int check_size_specifiers(const Token *tokens, size_t token_count, size_t lineno)
-{
-    if (tokens[token_count - 1].type == T_SIZE)
+    if (imm_ops == 1 && tokens[token_count - 1].type != T_NUMBER)
     {
-        fprintf(stderr, "Error on line %zu: size specifier '%s' not allowed as the last token\n", lineno, tokens[token_count - 1].lexeme);
+        fprintf(stderr, "Error on line %zu: immediate must be the second operand\n", lineno);
         return 1;
     }
 
-    size_t occurances = 0, first_i = 0, second_i = 0, comma_i = 0;
-    for (size_t i = 0; i < token_count; i++)
+    if (regs_in > 2)
     {
-        if (tokens[i].type == T_COMMA)
-            comma_i = i;
+        fprintf(stderr, "Error on line %zu: too many registers in the memory operand\n", lineno);
+        return 1;
+    }
 
-        if (tokens[i].type == T_SIZE)
+    if (regs_in >= 1)
+    {
+        if (regs_in == 2)
         {
-            if (occurances == 0)
-                first_i = i;
-            else if (occurances == 1)
-                second_i = i;
-
-            occurances++;
-        }
-    }
-
-    if (occurances >= 1)
-    {
-        if ((comma_i - 1) == first_i)
-        {
-            fprintf(stderr, "Error on line %zu: cannot write a size specifier before a ','\n", lineno);
-            return 1;
-        }
-
-        if (occurances == 2)
-            if ((comma_i - 1) == second_i)
+            if (tokens[mem_op_start + 1].type != T_REG || tokens[mem_op_start + 2].type != T_PLUS || tokens[mem_op_start + 3].type != T_REG)
             {
-                fprintf(stderr, "Error on line %zu: cannot write a size specifier before a ','\n", lineno);
-                return 1;
-            }
-    }
-
-    if (occurances > 2)
-    {
-        fprintf(stderr, "Error on line %zu: more than 2 size specifiers found in the line\n", lineno);
-        return 1;
-    }
-
-    if (occurances == 2)
-    {
-        if (strcmp(tokens[first_i].lexeme, tokens[second_i].lexeme) != 0)
-        {
-            fprintf(stderr, "Error on line %zu: size specifiers of different sizes is not allowed\n", lineno);
-            return 1;
-        }
-    }
-
-    return 0;
-}
-
-static inline int check_numbers(const Token *tokens, size_t token_count, size_t lineno)
-{
-    size_t n_count_outside = 0, n_count_inside = 0, sign_count_inside = 0;
-    for (size_t i = 0; i < token_count; i++)
-    {
-        if (tokens[i].type == T_NUMBER)
-        {
-            n_count_outside++;
-            continue;
-        }
-
-        if (tokens[i].type == T_O_BRACK)
-        {
-            while (tokens[i].type != T_C_BRACK)
-            {
-                if (tokens[i].type == T_NUMBER)
-                {
-                    n_count_inside++;
-                    i++;
-                    continue;
-                }
-
-                if (tokens[i].type == T_PLUS || tokens[i].type == T_MINUS)
-                {
-                    sign_count_inside++;
-                    i++;
-                    continue;
-                }
-
-                i++;
-            }
-        }
-    }
-
-    if (n_count_outside > 1)
-    {
-        fprintf(stderr, "Error on line %zu: two numbers not allowed\n", lineno);
-        return 1;
-    }
-
-    if (n_count_outside == 1)
-    {
-        if (tokens[token_count - 1].type != T_NUMBER)
-        {
-            fprintf(stderr, "Error on line %zu: number not allowed at that position\n", lineno);
-            return 1;
-        }
-    }
-
-    if (((int64_t)n_count_inside - (int64_t)sign_count_inside) > 1)
-    {
-        fprintf(stderr, "Error on line %zu: the number of sign symbols and numbers don't match\n", lineno);
-        return 1;
-    }
-
-    return 0;
-}
-
-static inline int check_sign_symbols(const Token *tokens, size_t token_count, size_t lineno)
-{
-    if (tokens[1].type == T_PLUS || tokens[1].type == T_MINUS)
-    {
-        fprintf(stderr, "Error on line %zu: sign symbols not allowed at that position\n", lineno);
-        return 1;
-    }
-
-    for (size_t i = 0; i < token_count; i++)
-    {
-        if (tokens[i].type == T_PLUS || tokens[i].type == T_MINUS)
-            if (tokens[i + 1].type != T_NUMBER)
-            {
-                fprintf(stderr, "Error on line %zu: sign symbols outside of the memory operand must be followed by a number\n", lineno);
+                fprintf(stderr, "Error on line %zu: expected '[reg+reg...]' pattern in memory operand\n", lineno);
                 return 1;
             }
 
-        if (tokens[i].type == T_O_BRACK)
-        {
-            while (tokens[i].type != T_C_BRACK)
+            TokenType after = tokens[mem_op_start + 4].type;
+            if (after != T_PLUS && after != T_MINUS && after != T_C_BRACK)
             {
-                if (tokens[i].type == T_MINUS)
-                {
-                    if (tokens[i + 1].type != T_NUMBER)
-                    {
-                        fprintf(stderr, "Error on line %zu: the minus sign symbol inside of the memory operand must be followed by a number\n", lineno);
-                        return 1;
-                    }
-                }
-
-                if (tokens[i].type == T_PLUS)
-                {
-                    if (tokens[i - 1].type == T_O_BRACK && tokens[i + 1].type == T_REG)
-                    {
-                        fprintf(stderr, "Error on line %zu: the plus sign symbol inside of the memory operand not allowed for the first regiser\n", lineno);
-                        return 1;
-                    }
-
-                    if (tokens[i + 1].type != T_NUMBER && tokens[i + 1].type != T_REG)
-                    {
-                        fprintf(stderr, "Error on line %zu: the plus sign symbol inside of the memory operand must be followed by a register or a number\n", lineno);
-                        return 1;
-                    }
-                }
-
-                i++;
-            }
-        }
-    }
-
-    return 0;
-}
-
-static inline int check_registers(const Token *tokens, size_t token_count, size_t lineno)
-{
-    size_t reg_count_outside = 0, reg_count_inside = 0, occurances_outside = 0, first_i_outside = 0, occurances_inside = 0, first_i_inside = 0;
-    for (size_t i = 0; i < token_count; i++)
-    {
-        if (tokens[i].type == T_REG)
-        {
-            if (occurances_outside == 0)
-            {
-                first_i_outside = i;
-                occurances_outside++;
-            }
-            reg_count_outside++;
-            continue;
-        }
-
-        if (tokens[i].type == T_O_BRACK)
-        {
-            while (tokens[i].type != T_C_BRACK)
-            {
-                if (tokens[i].type == T_REG)
-                {
-                    if (occurances_inside == 0)
-                    {
-                        first_i_inside = i;
-                        occurances_inside++;
-                    }
-                    reg_count_inside++;
-                    i++;
-                    continue;
-                }
-
-                i++;
-            }
-        }
-    }
-
-    if ((reg_count_outside + reg_count_inside) > 3)
-    {
-        fprintf(stderr, "Error on line %zu: too many registers on the line\n", lineno);
-        return 1;
-    }
-
-    if (reg_count_outside >= 1)
-    {
-        if (reg_count_outside > 2)
-        {
-            fprintf(stderr, "Error on line %zu: too many registers on the line\n", lineno);
-            return 1;
-        }
-
-        if (tokens[first_i_outside + 1].type != T_COMMA)
-        {
-            fprintf(stderr, "Error on line %zu: the first register operand must be followed by a ','\n", lineno);
-            return 1;
-        }
-
-        if (reg_count_outside == 2)
-        {
-            if (reg_count_inside != 0)
-            {
-                fprintf(stderr, "Error on line %zu: too many registers on the line\n", lineno);
-                return 1;
-            }
-
-            if (tokens[token_count - 1].type != T_REG)
-            {
-                fprintf(stderr, "Error on line %zu: the second register operand must the last token\n", lineno);
+                fprintf(stderr, "Error on line %zu: invalid token after '[reg+reg' in memory operand\n", lineno);
                 return 1;
             }
         }
-    }
-
-    if (reg_count_inside >= 1)
-    {
-        if (reg_count_inside > 2)
+        else if (regs_in == 1)
         {
-            fprintf(stderr, "Error on line %zu: too many registers on the line\n", lineno);
-            return 1;
-        }
-
-        if (reg_count_inside == 2)
-        {
-            if (tokens[first_i_inside + 1].type != T_PLUS)
+            if (tokens[mem_op_start + 1].type != T_REG)
             {
-                fprintf(stderr, "Error on line %zu: the first register inside the memory operand must be followed by a '+'\n", lineno);
+                fprintf(stderr, "Error on line %zu: expected register immediately after '[' in memory operand\n", lineno);
+                return 1;
+            }
+
+            TokenType after = tokens[mem_op_start + 2].type;
+            if (after != T_PLUS && after != T_MINUS && after != T_C_BRACK)
+            {
+                fprintf(stderr, "Error on line %zu: invalid token after '[reg' in memory operand\n", lineno);
                 return 1;
             }
         }
@@ -444,274 +293,4 @@ static inline MnemonicType classify_mnemonic(const char *m)
 
     fprintf(stderr, "Internal error: unhandled mnemonic '%s'\n", m);
     exit(2);
-}
-
-static inline int validate_syntax_full(const Token *tokens, size_t token_count, size_t lineno)
-{
-    if (tokens[0].type != T_MNEMONIC)
-    {
-        fprintf(stderr, "Error on line %zu: first token should be a valid mnemonic\n", lineno);
-        return 1;
-    }
-
-    if (token_count > 1)
-    {
-        // mov, ax bx -> not allowed
-        if (tokens[1].type == T_COMMA)
-        {
-            fprintf(stderr, "Error on line %zu: ',' not allowed at that position\n", lineno);
-            return 1;
-        }
-
-        // immediate is not allowed as the first operand
-        // mov +10, ax -> not allowed
-        // mov -10, ax -> not allowed
-        if (tokens[1].type == T_PLUS || tokens[1].type == T_MINUS)
-        {
-            fprintf(stderr, "Error on line %zu: sign symbols not allowed at that position\n", lineno);
-            return 1;
-        }
-
-        // immediate is not allowed as the first operand
-        // mov 10, ax -> not allowed
-        if (tokens[1].type == T_NUMBER)
-        {
-            fprintf(stderr, "Error on line %zu: immediate is not allowed as the first operand\n", lineno);
-            return 1;
-        }
-    }
-
-    // mov ax bx, -> not allowed
-    if (tokens[token_count - 1].type == T_COMMA)
-    {
-        fprintf(stderr, "Error on line %zu: ',' not allowed at that position\n", lineno);
-        return 1;
-    }
-
-    // mov ax, bx byte -> not allowed
-    // mov ax, bx word -> not allowed
-    if (tokens[token_count - 1].type == T_SIZE)
-    {
-        fprintf(stderr, "Error on line %zu: size specifiers not allowed as the last token\n", lineno);
-        return 1;
-    }
-
-    int64_t bracket_depth = 0;
-    size_t commas = 0, mem_ops = 0, size_specifiers = 0;
-    int64_t numbers_in = 0, signs_in = 0, regs_in = 0, first_reg_in_i = 0;
-    int64_t numbers_out = 0, regs_out = 0, first_reg_out_i = 0;
-    for (size_t i = 0; i < token_count; i++)
-    {
-        TokenType next = (i + 1 < token_count ? tokens[i + 1].type : T_INVALID);
-
-        switch (tokens[i].type)
-        {
-        case T_BAD:
-            fprintf(stderr, "Error: invalid token on line %zu: '%s'\n", lineno, tokens[i].lexeme);
-            return 1;
-        case T_COMMA:
-            commas++;
-            break;
-        case T_O_BRACK:
-            if (bracket_depth == 1)
-            {
-                fprintf(stderr, "Error on line %zu: nested '[' is not allowed\n", lineno);
-                return 1;
-            }
-            if (next == T_C_BRACK)
-            {
-                fprintf(stderr, "Error on line %zu: empty memory operand\n", lineno);
-                return 1;
-            }
-            bracket_depth++;
-            break;
-        case T_C_BRACK:
-            if (bracket_depth == 0)
-            {
-                fprintf(stderr, "Error on line %zu: closing ']' without an opening '['\n", lineno);
-                return 1;
-            }
-            bracket_depth--;
-            mem_ops++;
-            break;
-        case T_SIZE:
-            if (bracket_depth > 0)
-            {
-                fprintf(stderr, "Error on line %zu: size specifier not allowed inside the memory operand\n", lineno);
-                return 1;
-            }
-            if (next != T_NUMBER && next != T_REG)
-            {
-                fprintf(stderr, "Error on line %zu: size specifier must be followed by a number or a register\n", lineno);
-                return 1;
-            }
-            size_specifiers++;
-            break;
-        case T_NUMBER:
-            if (bracket_depth > 0)
-            {
-                numbers_in++;
-            }
-            else
-            {
-                numbers_out++;
-            }
-            break;
-        case T_PLUS:
-        case T_MINUS:
-            if (bracket_depth > 0)
-            {
-                if (i > 0 && tokens[i - 1].type == T_O_BRACK)
-                {
-                    fprintf(stderr, "Error on line %zu: sign symbols not allowed as first tokens inside a memory operand\n", lineno);
-                    return 1;
-                }
-
-                if (tokens[i].type == T_MINUS)
-                {
-                    if (next != T_NUMBER)
-                    {
-                        fprintf(stderr, "Error on line %zu: '-' symbol inside the memory operand must be followed by a number\n", lineno);
-                        return 1;
-                    }
-                }
-                else
-                {
-                    if (next != T_NUMBER && next != T_REG)
-                    {
-                        fprintf(stderr, "Error on line %zu: '+' symbol inside the memory operand must be followed by a number or a register\n", lineno);
-                        return 1;
-                    }
-                }
-                signs_in++;
-            }
-            else
-            {
-                if (next != T_NUMBER)
-                {
-                    fprintf(stderr, "Error on line %zu: sign symbols outside the memory operand must be followed by a number\n", lineno);
-                    return 1;
-                }
-            }
-            break;
-        case T_REG:
-            if (bracket_depth > 0)
-            {
-                if (regs_in == 0)
-                {
-                    first_reg_in_i = i;
-                }
-                regs_in++;
-            }
-            else
-            {
-                if (regs_out == 0)
-                {
-                    first_reg_out_i = i;
-                }
-                regs_out++;
-            }
-            break;
-        default:
-            break;
-        }
-    }
-
-    if (bracket_depth == 1)
-    {
-        fprintf(stderr, "Error on line %zu: opening '[' without a matching ']'\n", lineno);
-        return 1;
-    }
-
-    if (commas > 1)
-    {
-        fprintf(stderr, "Error on line %zu: expected exactly one ','\n", lineno);
-        return 1;
-    }
-
-    if (mem_ops > 1)
-    {
-        fprintf(stderr, "Error on line %zu: expected exactly one memory operand\n", lineno);
-        return 1;
-    }
-
-    if (size_specifiers > 2)
-    {
-        fprintf(stderr, "Error on line %zu: too many size specifiers\n", lineno);
-        return 1;
-    }
-
-    if (numbers_out == 1)
-    {
-        if (tokens[token_count - 1].type != T_NUMBER)
-        {
-            fprintf(stderr, "Error on line %zu: immediate must be the second operand\n", lineno);
-            return 1;
-        }
-    }
-
-    if (numbers_out > 1)
-    {
-        fprintf(stderr, "Error on line %zu: expected exactly one immediate operand\n", lineno);
-        return 1;
-    }
-
-    if (numbers_in - signs_in > 1)
-    {
-        fprintf(stderr, "Error on line %zu: trailing number inside the memory operand\n", lineno);
-        return 1;
-    }
-
-    if (regs_out + regs_in > 3)
-    {
-        fprintf(stderr, "Error on line %zu: too many registers\n", lineno);
-        return 1;
-    }
-
-    if (regs_out > 2)
-    {
-        fprintf(stderr, "Error on line %zu: too many register operands\n", lineno);
-        return 1;
-    }
-
-    if (regs_out >= 1)
-    {
-        if (tokens[first_reg_out_i + 1].type != T_COMMA)
-        {
-            fprintf(stderr, "Error on line %zu: the first register operand must be followed by a ','\n", lineno);
-            return 1;
-        }
-
-        if (regs_out == 2)
-        {
-            if (regs_in != 0)
-            {
-                fprintf(stderr, "Error on line %zu: too many registers\n", lineno);
-                return 1;
-            }
-
-            if (tokens[token_count - 1].type != T_REG)
-            {
-                fprintf(stderr, "Error on line %zu: the second register operand must the last token\n", lineno);
-                return 1;
-            }
-        }
-    }
-
-    if (regs_in > 2)
-    {
-        fprintf(stderr, "Error on line %zu: too many registers in the memory operand\n", lineno);
-        return 1;
-    }
-
-    if (regs_in == 2)
-    {
-        if (tokens[first_reg_in_i + 1].type != T_PLUS)
-        {
-            fprintf(stderr, "Error on line %zu: the first register inside the memory operand must be followed by a '+'\n", lineno);
-            return 1;
-        }
-    }
-
-    return 0;
 }
