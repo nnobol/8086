@@ -173,9 +173,8 @@ static void test_bad_sign_symbols(void)
     expect_parse_error("mov ax, ++100", "Error on line 10: sign symbols outside the memory operand must be followed by a number");
 }
 
-int main(void)
+static void test_bad_syntax(void)
 {
-    printf("Running parser negative tests...\n");
     test_bad_tokens();
     test_invalid_instruction_structure();
     test_operand_count_and_positioning();
@@ -183,6 +182,45 @@ int main(void)
     test_bad_commas();
     test_bad_size_specifiers();
     test_bad_sign_symbols();
+}
+
+static void test_semantic_mov_errors(void)
+{
+    expect_parse_error("mov ax", "Error on line 10: 'mov' instruction requires exactly two operands");
+    expect_parse_error("mov byte ax, 5", "Error on line 10: operand size (word) does not match specified size (byte)");
+    expect_parse_error("mov word al, 5", "Error on line 10: operand size (byte) does not match specified size (word)");
+    expect_parse_error("mov al, byte 500", "Error on line 10: immediate value does not fit in a byte (-256 to 255)");
+    expect_parse_error("mov al, word 5", "Error on line 10: operand sizes do not match");
+    expect_parse_error("mov ax, 999999999999999999999999", "Error on line 10: immediate value exceeds valid range");
+    expect_parse_error("mov ax, -65537", "Error on line 10: immediate value exceeds valid range (-65536 to 65535)");
+    expect_parse_error("mov ax, 65536", "Error on line 10: immediate value exceeds valid range (-65536 to 65535)");
+    expect_parse_error("mov ax, [ax]", "Error on line 10: invalid base register 'ax' in the memory operand");
+    expect_parse_error("mov ax, [si+di]", "Error on line 10: base register 'si' cannot be combined with an index register");
+    expect_parse_error("mov ax, [di+si]", "Error on line 10: base register 'di' cannot be combined with an index register");
+    expect_parse_error("mov ax, [bp+ax]", "Error on line 10: invalid index register 'ax' in the memory operand");
+    expect_parse_error("mov ax, [bx+cx]", "Error on line 10: invalid index register 'cx' in the memory operand");
+    expect_parse_error("mov ax, [999999999999999999999999]", "Error on line 10: number inside the memory operand exceeds valid range");
+    expect_parse_error("mov ax, [-999999999999999999999999]", "Error on line 10: number inside the memory operand exceeds valid range");
+    expect_parse_error("mov ax, [+999999999999999999999999]", "Error on line 10: number inside the memory operand exceeds valid range");
+    expect_parse_error("mov ax, [bp+999999999999999999999999]", "Error on line 10: number inside the memory operand exceeds valid range");
+    expect_parse_error("mov ax, [-65537]", "Error on line 10: number inside the memory operand exceeds valid range (-65536 to 65535)");
+    expect_parse_error("mov ax, [65536]", "Error on line 10: number inside the memory operand exceeds valid range (-65536 to 65535)");
+    expect_parse_error("mov ax, [40000+40000]", "Error on line 10: numbers inside the memory operand exceed valid range (-65536 to 65535)");
+    expect_parse_error("mov ax, [-40000-40000]", "Error on line 10: numbers inside the memory operand exceed valid range (-65536 to 65535)");
+    expect_parse_error("mov ax, [bp-32769]", "Error on line 10: number inside the memory operand exceeds valid range (-32768 to 32767)");
+    expect_parse_error("mov ax, [bp+32768]", "Error on line 10: number inside the memory operand exceeds valid range (-32768 to 32767)");
+    expect_parse_error("mov ax, [bp+17000+17000]", "Error on line 10: numbers inside the memory operand exceed valid range (-32768 to 32767)");
+    expect_parse_error("mov ax, [bp-17000-17000]", "Error on line 10: numbers inside the memory operand exceed valid range (-32768 to 32767)");
+    expect_parse_error("mov ax, al", "Error on line 10: operand sizes do not match");
+    expect_parse_error("mov word ax, byte al", "Error on line 10: operand sizes do not match");
+    expect_parse_error("mov [100], 5", "Error on line 10: operation size not specified");
+}
+
+int main(void)
+{
+    printf("Running parser negative tests...\n");
+    test_bad_syntax();
+    test_semantic_mov_errors();
     printf("All parser tests passed!\n");
     return 0;
 }
