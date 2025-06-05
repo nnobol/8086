@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "tokenizer.h"
+#include "tokenizer.c"
 
 void expect_token(const Token *t, TokenType expected_type, const char *expected_lexeme, size_t expected_line)
 {

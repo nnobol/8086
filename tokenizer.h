@@ -1,11 +1,7 @@
 #ifndef TOKENIZER_H
 #define TOKENIZER_H
 
-#include <stddef.h>  // for size_t
-
-#define LINE_N_MAX 65535
-#define LINE_LEN_MAX 65535
-#define LINE_ONE_BITS_DECLARATION "bits 16\n"
+#include <stddef.h> // for size_t
 
 typedef enum
 {

@@ -1,10 +1,7 @@
-#include "assert.h"
 #include <stdio.h>  // for fprintf, stderr
-#include <stdlib.h> // for free
+#include <stdlib.h> // for free, exit, strtol
 #include <string.h> // for strcmp
-#include <stdint.h> // for int64_t
-#include <stdbool.h>
-#include <errno.h>
+#include <errno.h>  // for errno
 
 #include "parser.h"
 
@@ -16,7 +13,7 @@ static inline void free_tokens(Token *tokens, size_t token_count);
 static const struct
 {
     const char *name;
-    OperandSize size;
+    Size size;
     uint8_t reg_code;
 } registers[] = {
     {"al", SZ_BYTE, 0x00},
@@ -53,27 +50,8 @@ static const struct
     {"bx", NULL, 0x07},
     {NULL, NULL, 0}};
 
-// int main()
-// {
-//     const char *line = "mov ax, [bx]";
-//     Token *tokens = NULL;
-//     size_t token_count = 0;
-//     size_t lineno = 25;
-//     int result = tokenize_line(line, lineno, &tokens, &token_count);
-//     if (result != 0 || token_count == 0)
-//         return 1;
-//     Instruction inst;
-//     result = parse_tokens(tokens, token_count, lineno, &inst);
-//     if (result != 0)
-//         return 1;
-
-//     return 0;
-// }
-
 int parse_tokens(Token *tokens, size_t token_count, size_t lineno, Instruction *inst_out)
 {
-    (void)inst_out;
-
     size_t comma_i = 0;
     uint8_t operands = 0;
     int result = validate_syntax(tokens, token_count, lineno, &operands, &comma_i);
@@ -121,18 +99,25 @@ int parse_tokens(Token *tokens, size_t token_count, size_t lineno, Instruction *
         if (op1.size == SZ_NONE && op2.size == SZ_NONE)
         {
             fprintf(stderr, "Error on line %zu: operation size not specified\n", lineno);
+            free_tokens(tokens, token_count);
             return 1;
         }
 
         if (op1.size != op2.size)
         {
             fprintf(stderr, "Error on line %zu: operand sizes do not match\n", lineno);
+            free_tokens(tokens, token_count);
             return 1;
         }
+
+        inst_out->mnem = T_MOV;
+        inst_out->op1 = op1;
+        inst_out->op2 = op2;
 
         break;
     }
 
+    free_tokens(tokens, token_count);
     return 0;
 }
 
@@ -574,7 +559,46 @@ static inline int parse_operand(const OperandTokenSpan *tspan, Operand *op_out, 
 
         op_out->mem.base_reg = base_reg;
         op_out->mem.index_reg = index_reg;
-        op_out->mem.disp = (int16_t)disp_total;
+        op_out->mem.disp_value = (int16_t)disp_total;
+
+        if (base_reg == NULL)
+        {
+            // special case: direct address [1234]
+            // must be MOD=00, R/M=110, and always 2-byte disp
+            op_out->mem.disp_size = SZ_WORD;
+            op_out->mem.rm_code = 0x06;
+        }
+        else
+        {
+            // set R/M
+            for (int i = 0; address_table[i].base_reg != NULL; i++)
+            {
+                if (strcmp(address_table[i].base_reg, base_reg) == 0)
+                {
+                    if ((address_table[i].index_reg == NULL && index_reg == NULL) ||
+                        (address_table[i].index_reg != NULL && index_reg != NULL && strcmp(address_table[i].index_reg, index_reg) == 0))
+                    {
+                        op_out->mem.rm_code = address_table[i].rm_code;
+                        break;
+                    }
+                }
+            }
+
+            // determine disp size
+            if (disp_total == 0 && strcmp(base_reg, "bp") != 0)
+            {
+                // no displacement, and not [bp] - can use MOD = 00
+                op_out->mem.disp_size = SZ_NONE;
+            }
+            else if (disp_total >= -128 && disp_total <= 127)
+            {
+                op_out->mem.disp_size = SZ_BYTE;
+            }
+            else
+            {
+                op_out->mem.disp_size = SZ_WORD;
+            }
+        }
     }
 
     if (op_out->has_explicit_size && op_out->explicit_size != op_out->size)

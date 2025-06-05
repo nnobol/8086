@@ -10,8 +10,8 @@
 #define fileno _fileno
 #endif
 
-#include "tokenizer.h"
-#include "parser.h"
+#include "tokenizer.c"
+#include "parser.c"
 
 static FILE *stderr_tmp;
 
@@ -72,7 +72,6 @@ static void expect_parse_error(const char *line, const char *want_msg)
     Instruction dummy;
     int pr = parse_tokens(tokens, n, lineno, &dummy);
     char *out = end_capture_stderr();
-    printf("%s", out);
 
     // 3) assert return != 0 and message contains want_msg
     assert(pr != 0);

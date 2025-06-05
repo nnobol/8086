@@ -1,6 +1,7 @@
-#include <ctype.h>  // for isspace, isdigit, isalpha, tolower
-#include <string.h> // for memcpy, strlen, strcmp
-#include <stdlib.h> // for malloc, realloc, free
+#include <stdio.h>   // for fprintf, stderr
+#include <ctype.h>   // for isspace, isdigit, isalpha, tolower
+#include <string.h>  // for memcpy, strlen, strcmp
+#include <stdlib.h>  // for malloc, realloc, free
 #include <stdbool.h> // for bool
 
 #include "tokenizer.h"
@@ -57,8 +58,9 @@ int tokenize_line(const char *line_src, size_t line_n, Token **tokens_out, size_
         Token t;
         int result = next_token(&tk, &t);
 
-        if (result == 1) // malloc failure inside next_token
+        if (result == 1)
         {
+            fprintf(stderr, "Error: memory allocation failed during tokenization (next_token)\n");
             for (size_t i = 0; i < t_count; i++)
                 free(arr[i].lexeme);
             free(arr);
@@ -77,6 +79,7 @@ int tokenize_line(const char *line_src, size_t line_n, Token **tokens_out, size_
             Token *tmp = realloc(arr, newcap * sizeof *arr);
             if (!tmp)
             {
+                fprintf(stderr, "Error: memory allocation failed while resizing token array (tokenize_line)\n");
                 free(t.lexeme);
                 for (size_t i = 0; i < t_count; i++)
                     free(arr[i].lexeme);
