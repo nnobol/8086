@@ -585,10 +585,16 @@ static inline int parse_operand(const OperandTokenSpan *tspan, Operand *op_out, 
             }
 
             // determine disp size
-            if (disp_total == 0 && strcmp(base_reg, "bp") != 0)
+            if (disp_total == 0)
             {
-                // no displacement, and not [bp] - can use MOD = 00
-                op_out->mem.disp_size = SZ_NONE;
+                if (base_reg && strcmp(base_reg, "bp") == 0 && index_reg == NULL)
+                {
+                    op_out->mem.disp_size = SZ_BYTE;
+                }
+                else
+                {
+                    op_out->mem.disp_size = SZ_NONE;
+                }
             }
             else if (disp_total >= -128 && disp_total <= 127)
             {

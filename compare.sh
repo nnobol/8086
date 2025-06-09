@@ -12,7 +12,7 @@ NASM_DIS="$OUT_DIR/nasm-control.dis"
 PROGRAM="$OUT_DIR/my-program"
 
 # 1. Compile and assemble with my program
-gcc encoder.c -o "$PROGRAM"
+gcc main.c -o "$PROGRAM"
 "$PROGRAM" "$INPUT" "$MY_OUT"
 
 # 2. Assemble with NASM

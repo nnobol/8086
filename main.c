@@ -5,6 +5,7 @@
 
 #include "tokenizer.c"
 #include "parser.c"
+#include "encoder.c"
 
 #define LINE_LEN_MAX 256
 #define LINE_ONE_BITS_DECLARATION "bits 16\n"
@@ -93,7 +94,17 @@ int main(int argc, char *argv[])
         // so I nullify the pointer here to avoid confusion or accidental reuse
         tokens = NULL;
 
-        // encode instruction here
+        uint8_t buffer[6]; // max instruction size for 8086 is 6 bytes
+        size_t out_size = 0;
+        result = encode_instruction(&inst, buffer, &out_size, lineno);
+        if (result != 0)
+        {
+            fclose(input);
+            fclose(output);
+            return 1;
+        }
+
+        fwrite(buffer, 1, out_size, output);
     }
 
     fclose(input);
