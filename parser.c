@@ -61,12 +61,17 @@ int parse_tokens(Token *tokens, size_t token_count, size_t lineno, Instruction *
         return 1;
     }
 
-    switch (classify_mnemonic(tokens[0].lexeme))
+    MnemonicType mnemtype = classify_mnemonic(tokens[0].lexeme);
+
+    switch (mnemtype)
     {
     case T_MOV:
+    case T_ADD:
+    case T_SUB:
+    case T_CMP:
         if (operands != 2)
         {
-            fprintf(stderr, "Error on line %zu: 'mov' instruction requires exactly two operands\n", lineno);
+            fprintf(stderr, "Error on line %zu: '%s' instruction requires exactly two operands\n", lineno, tokens[0].lexeme);
             free_tokens(tokens, token_count);
             return 1;
         }
@@ -96,6 +101,11 @@ int parse_tokens(Token *tokens, size_t token_count, size_t lineno, Instruction *
         else if (op2.opType == OP_MEM && op2.size == SZ_NONE)
             op2.size = op1.size;
 
+        if (op1.opType == OP_IMM && !op1.has_explicit_size)
+            op1.size = op2.size;
+        else if (op2.opType == OP_IMM && !op2.has_explicit_size)
+            op2.size = op1.size;
+
         if (op1.size == SZ_NONE && op2.size == SZ_NONE)
         {
             fprintf(stderr, "Error on line %zu: operation size not specified\n", lineno);
@@ -110,10 +120,9 @@ int parse_tokens(Token *tokens, size_t token_count, size_t lineno, Instruction *
             return 1;
         }
 
-        inst_out->mnem = T_MOV;
+        inst_out->mnem = mnemtype;
         inst_out->op1 = op1;
         inst_out->op2 = op2;
-
         break;
     }
 
@@ -209,9 +218,9 @@ static inline int validate_syntax(const Token *tokens, size_t token_count, size_
                 fprintf(stderr, "Error on line %zu: size specifier not allowed inside the memory operand\n", lineno);
                 return 1;
             }
-            if (next != T_NUMBER && next != T_REG && next != T_PLUS && next != T_MINUS)
+            if (next != T_NUMBER && next != T_REG && next != T_PLUS && next != T_MINUS && next != T_O_BRACK)
             {
-                fprintf(stderr, "Error on line %zu: size specifier must be followed by an immediate or a register\n", lineno);
+                fprintf(stderr, "Error on line %zu: size specifier must be followed by an immediate, register or a memory operand\n", lineno);
                 return 1;
             }
             break;
@@ -443,6 +452,9 @@ static inline int parse_operand(const OperandTokenSpan *tspan, Operand *op_out, 
     {
         op_out->opType = OP_MEM;
 
+        if (op_out->has_explicit_size)
+            op_out->size = op_out->explicit_size;
+
         const char *base_reg = NULL;
         const char *index_reg = NULL;
 
@@ -622,6 +634,12 @@ static inline MnemonicType classify_mnemonic(const char *m)
 {
     if (strcmp("mov", m) == 0)
         return T_MOV;
+    if (strcmp("add", m) == 0)
+        return T_ADD;
+    if (strcmp("sub", m) == 0)
+        return T_SUB;
+    if (strcmp("cmp", m) == 0)
+        return T_CMP;
 
     fprintf(stderr, "Internal error: unhandled mnemonic '%s'\n", m);
     exit(2);

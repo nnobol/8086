@@ -16,6 +16,9 @@ typedef enum
 typedef enum
 {
     T_MOV,
+    T_ADD,
+    T_SUB,
+    T_CMP
 } MnemonicType;
 
 typedef enum

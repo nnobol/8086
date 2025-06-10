@@ -19,6 +19,9 @@ static const struct
 } keyword_map[] = {
     // mnemonics
     {"mov", T_MNEMONIC},
+    {"add", T_MNEMONIC},
+    {"sub", T_MNEMONIC},
+    {"cmp", T_MNEMONIC},
     // size prefixes
     {"byte", T_SIZE},
     {"word", T_SIZE},
